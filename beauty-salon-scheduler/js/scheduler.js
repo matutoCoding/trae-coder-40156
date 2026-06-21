@@ -174,6 +174,83 @@ var Scheduler = (function () {
         });
     }
 
+    function isBeauticianAvailable(beauticianId, date, startTime, endTime) {
+        var leaves = Store.query('beauticianLeaves', function (l) {
+            return l.beauticianId === beauticianId && l.date === date && l.status === 'active';
+        });
+        if (leaves.length > 0) return false;
+
+        var schedules = Store.query('beauticianSchedules', function (s) {
+            return s.beauticianId === beauticianId;
+        });
+
+        if (schedules.length === 0) return true;
+
+        var d = new Date(date + 'T00:00:00');
+        var weekday = d.getDay();
+        if (weekday === 0) weekday = 7;
+
+        var daySchedule = schedules.find(function (s) { return s.weekday === weekday; });
+        if (!daySchedule) return false;
+        if (daySchedule.off) return false;
+
+        var sStart = parseFloat(daySchedule.startTime || 9);
+        var sEnd = parseFloat(daySchedule.endTime || 21);
+
+        if (startTime !== undefined) {
+            if (startTime < sStart || (endTime !== undefined && endTime > sEnd)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    function getAvailableBeauticians(date, startTime, endTime) {
+        var beauticians = Store.getAll('beauticians');
+        return beauticians.filter(function (b) {
+            return isBeauticianAvailable(b.id, date, startTime, endTime);
+        });
+    }
+
+    function renderBeauticianList() {
+        var beauticians = Store.getAll('beauticians');
+        var container = document.getElementById('beautician-list');
+        if (!container) return;
+
+        if (beauticians.length === 0) {
+            container.innerHTML = '<div class="empty-hint">暂无美容师，请点击"美容师登记"添加</div>';
+            return;
+        }
+
+        var dateInput = document.getElementById('scheduler-date');
+        var date = dateInput ? dateInput.value : new Date().toISOString().split('T')[0];
+
+        container.innerHTML = beauticians.map(function (b) {
+            var available = isBeauticianAvailable(b.id, date);
+            var statusClass = available ? 'status-available' : 'status-unavailable';
+            var statusText = available ? '在岗' : '休假/休息';
+            var specStr = (b.specialties && b.specialties.length > 0) ? b.specialties.slice(0, 2).join('、') : '未设置专长';
+
+            return '<div class="list-item beautician-item" data-id="' + b.id + '">' +
+                '<div class="item-main">' +
+                '<span class="item-icon">👩</span>' +
+                '<div class="item-info">' +
+                '<strong>' + b.name + '</strong>' +
+                '<small>' + specStr + '</small>' +
+                '<small class="staff-status ' + statusClass + '">' + statusText + '</small>' +
+                '</div>' +
+                '</div>' +
+                '<div class="item-actions">' +
+                '<button class="btn-icon" data-action="edit-beautician-schedule" data-id="' + b.id + '" title="排班">⏰</button>' +
+                '<button class="btn-icon" data-action="add-beautician-leave" data-id="' + b.id + '" title="请假">🏖️</button>' +
+                '<button class="btn-icon btn-edit" data-action="edit-beautician" data-id="' + b.id + '" title="编辑">✏️</button>' +
+                '<button class="btn-icon btn-delete" data-action="delete-beautician" data-id="' + b.id + '" title="删除">🗑️</button>' +
+                '</div>' +
+                '</div>';
+        }).join('');
+    }
+
     function renderBedList() {
         var beds = Store.getAll('beds');
         var container = document.getElementById('bed-list');
@@ -222,6 +299,17 @@ var Scheduler = (function () {
             var startStr = formatTime(appt.startTime);
             var endStr = formatTime(appt.endTime);
 
+            var actionsHtml = '';
+            if (appt.status === 'booked') {
+                actionsHtml += '<button class="btn-icon" data-action="complete-service" data-id="' + appt.id + '" title="完成服务">✅</button>';
+                actionsHtml += '<button class="btn-icon btn-cancel" data-action="cancel-appointment" data-id="' + appt.id + '" title="取消预约">❌</button>';
+            } else if (appt.status === 'completed') {
+                actionsHtml += '<span style="font-size:11px;color:var(--success);font-weight:600">已完成</span>';
+            } else if (appt.status === 'cancelled') {
+                actionsHtml += '<span style="font-size:11px;color:var(--text-light);font-weight:600">已取消</span>';
+            }
+            actionsHtml += '<button class="btn-icon" data-action="view-customer-history" data-id="' + appt.customerId + '" title="顾客档案">👤</button>';
+
             return '<div class="list-item appointment-item" data-id="' + appt.id + '">' +
                 '<div class="item-main">' +
                 '<span class="time-badge">' + startStr + '-' + endStr + '</span>' +
@@ -230,9 +318,7 @@ var Scheduler = (function () {
                 '<small>' + appt.serviceName + ' · ' + (beautician ? beautician.name : '未知美容师') + '</small>' +
                 '</div>' +
                 '</div>' +
-                '<div class="item-actions">' +
-                '<button class="btn-icon btn-cancel" data-action="cancel-appointment" data-id="' + appt.id + '" title="取消预约">❌</button>' +
-                '</div>' +
+                '<div class="item-actions">' + actionsHtml + '</div>' +
                 '</div>';
         }).join('');
     }
@@ -397,9 +483,19 @@ var Scheduler = (function () {
         html += '<div class="week-header">';
         html += '<div class="week-corner"></div>';
         weekDates.forEach(function (wd) {
+            var unavailable = beauticians.filter(function (b) {
+                return !isBeauticianAvailable(b.id, wd.date);
+            }).map(function (b) { return b.name; });
+
+            var unavailHtml = '';
+            if (unavailable.length > 0) {
+                unavailHtml = '<div class="week-unavailable" title="' + unavailable.join('、') + ' 不在班">休: ' + unavailable.slice(0, 2).join('、') + (unavailable.length > 2 ? '+' + (unavailable.length - 2) : '') + '</div>';
+            }
+
             html += '<div class="week-day-header">' +
                 '<div class="week-day-label">' + wd.weekday + '</div>' +
                 '<div class="week-date-label">' + wd.label + '</div>' +
+                unavailHtml +
                 '</div>';
         });
         html += '</div>';
@@ -700,9 +796,21 @@ var Scheduler = (function () {
             return '<option value="' + c.id + '" ' + sel + '>' + c.name + ' (' + c.phone + ')</option>';
         }).join('');
 
-        var beauticianOptions = beauticians.map(function (b) {
+        var availableBeauticians = beauticians.filter(function (b) {
+            return isBeauticianAvailable(b.id, selectedDate);
+        });
+        if (prefill.beauticianId) {
+            var prefillBeautician = beauticians.find(function (b) { return b.id === prefill.beauticianId; });
+            if (prefillBeautician && availableBeauticians.indexOf(prefillBeautician) === -1) {
+                availableBeauticians.unshift(prefillBeautician);
+            }
+        }
+
+        var beauticianOptions = availableBeauticians.map(function (b) {
             var sel = prefill.beauticianId === b.id ? 'selected' : '';
-            return '<option value="' + b.id + '" ' + sel + '>' + b.name + '</option>';
+            var avail = isBeauticianAvailable(b.id, selectedDate);
+            var label = avail ? b.name : (b.name + ' (不在班)');
+            return '<option value="' + b.id + '" ' + sel + '>' + label + '</option>';
         }).join('');
 
         var serviceOptions = SERVICE_TYPES.map(function (s) {
@@ -813,10 +921,265 @@ var Scheduler = (function () {
         }, 100);
     }
 
+    function showBeauticianScheduleForm(beauticianId) {
+        var beautician = Store.getById('beauticians', beauticianId);
+        if (!beautician) return;
+
+        var existing = Store.query('beauticianSchedules', function (s) { return s.beauticianId === beauticianId; });
+        var weekdayLabels = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+        var timeOptions = TIME_SLOTS.map(function (t) {
+            return '<option value="' + t.hour + '">' + t.label + '</option>';
+        }).join('');
+
+        var rowsHtml = '';
+        for (var wd = 1; wd <= 7; wd++) {
+            var sched = existing.find(function (s) { return s.weekday === wd; }) || {};
+            var offChecked = sched.off ? 'checked' : '';
+            var startSel = sched.startTime || 9;
+            var endSel = sched.endTime || 21;
+            rowsHtml += '<tr>' +
+                '<td>' + weekdayLabels[wd - 1] + '</td>' +
+                '<td><label class="checkbox-label"><input type="checkbox" name="off_' + wd + '" ' + offChecked + '> 休息</label></td>' +
+                '<td><select name="start_' + wd + '" class="form-input" style="padding:4px 8px;font-size:12px">' +
+                TIME_SLOTS.map(function (t) { return '<option value="' + t.hour + '" ' + (parseFloat(startSel) === t.hour ? 'selected' : '') + '>' + t.label + '</option>'; }).join('') +
+                '</select></td>' +
+                '<td><select name="end_' + wd + '" class="form-input" style="padding:4px 8px;font-size:12px">' +
+                TIME_SLOTS.map(function (t) { return '<option value="' + t.hour + '" ' + (parseFloat(endSel) === t.hour ? 'selected' : '') + '>' + t.label + '</option>'; }).join('') +
+                '</select></td>' +
+                '</tr>';
+        }
+
+        var html = '<div>' +
+            '<p style="font-size:13px;color:var(--text-light);margin-bottom:12px">设置 <strong>' + beautician.name + '</strong> 的每周上班时间，未设置默认全部在岗 (9:00-21:30)</p>' +
+            '<table style="width:100%;border-collapse:collapse;font-size:12px">' +
+            '<thead><tr style="background:var(--bg);color:var(--text-light)"><th style="padding:8px;text-align:left">星期</th><th style="padding:8px;text-align:left">状态</th><th style="padding:8px;text-align:left">上班</th><th style="padding:8px;text-align:left">下班</th></tr></thead>' +
+            '<tbody>' + rowsHtml + '</tbody>' +
+            '</table>' +
+            '</div>';
+
+        var footerHtml = '<button class="btn btn-primary" id="btn-save-schedule">保存排班</button>' +
+            '<button class="btn btn-outline" id="btn-cancel-modal">取消</button>';
+
+        App.showModal(beautician.name + ' - 排班设置', html, footerHtml);
+
+        setTimeout(function () {
+            var saveBtn = document.getElementById('btn-save-schedule');
+            if (saveBtn) {
+                saveBtn.onclick = function () {
+                    Store.query('beauticianSchedules', function (s) { return s.beauticianId === beauticianId; }).forEach(function (s) {
+                        Store.remove('beauticianSchedules', s.id);
+                    });
+
+                    for (var wd = 1; wd <= 7; wd++) {
+                        var offEl = document.querySelector('input[name="off_' + wd + '"]');
+                        var startEl = document.querySelector('select[name="start_' + wd + '"]');
+                        var endEl = document.querySelector('select[name="end_' + wd + '"]');
+                        Store.add('beauticianSchedules', {
+                            beauticianId: beauticianId,
+                            weekday: wd,
+                            off: offEl ? offEl.checked : false,
+                            startTime: startEl ? startEl.value : 9,
+                            endTime: endEl ? endEl.value : 21
+                        });
+                    }
+                    App.hideModal();
+                    App.showToast('排班已保存', 'success');
+                    refresh();
+                };
+            }
+            document.getElementById('btn-cancel-modal').onclick = App.hideModal;
+        }, 100);
+    }
+
+    function showBeauticianLeaveForm(beauticianId) {
+        var beautician = Store.getById('beauticians', beauticianId);
+        if (!beautician) return;
+
+        var today = new Date().toISOString().split('T')[0];
+        var html = '<form id="leave-form">' +
+            '<div class="form-group">' +
+            '<label>请假日期 <span class="required">*</span></label>' +
+            '<input type="date" id="leave-date" class="form-input" value="' + today + '">' +
+            '</div>' +
+            '<div class="form-group">' +
+            '<label>请假原因</label>' +
+            '<input type="text" id="leave-reason" class="form-input" placeholder="例如：病假、年假、事假">' +
+            '</div>' +
+            '</form>';
+
+        var footerHtml = '<button class="btn btn-primary" id="btn-save-leave">保存</button>' +
+            '<button class="btn btn-outline" id="btn-cancel-modal">取消</button>';
+
+        App.showModal(beautician.name + ' - 请假登记', html, footerHtml);
+
+        setTimeout(function () {
+            var saveBtn = document.getElementById('btn-save-leave');
+            if (saveBtn) {
+                saveBtn.onclick = function () {
+                    var date = document.getElementById('leave-date').value;
+                    if (!date) { App.showToast('请选择请假日期', 'error'); return; }
+                    var reason = document.getElementById('leave-reason').value.trim();
+                    Store.add('beauticianLeaves', {
+                        beauticianId: beauticianId,
+                        date: date,
+                        reason: reason,
+                        status: 'active'
+                    });
+                    App.hideModal();
+                    App.showToast('请假已登记', 'success');
+                    refresh();
+                };
+            }
+            document.getElementById('btn-cancel-modal').onclick = App.hideModal;
+        }, 100);
+    }
+
+    function showCompleteServiceForm(appointmentId) {
+        var appt = Store.getById('appointments', appointmentId);
+        if (!appt) return;
+        var customer = Store.getById('customers', appt.customerId);
+        var beautician = Store.getById('beauticians', appt.beauticianId);
+        var bed = Store.getById('beds', appt.bedId);
+
+        var html = '<form id="complete-service-form">' +
+            '<div style="background:var(--bg);padding:12px;border-radius:var(--radius-sm);margin-bottom:16px">' +
+            '<p style="margin-bottom:4px"><strong>顾客：</strong>' + (customer ? customer.name : '') + '</p>' +
+            '<p style="margin-bottom:4px"><strong>美容师：</strong>' + (beautician ? beautician.name : '') + '</p>' +
+            '<p style="margin-bottom:4px"><strong>项目：</strong>' + appt.serviceName + '</p>' +
+            '<p><strong>时间：</strong>' + appt.date + ' ' + formatTime(appt.startTime) + '-' + formatTime(appt.endTime) + '</p>' +
+            '</div>' +
+            '<div class="form-row">' +
+            '<div class="form-group">' +
+            '<label>服务结果</label>' +
+            '<select id="service-result" class="form-input">' +
+            '<option value="completed">已完成</option>' +
+            '<option value="excellent">效果很好</option>' +
+            '<option value="normal">正常</option>' +
+            '<option value="issues">有小问题</option>' +
+            '</select>' +
+            '</div>' +
+            '<div class="form-group">' +
+            '<label>消费金额 (元)</label>' +
+            '<input type="number" id="service-amount" class="form-input" min="0" step="1" placeholder="例如：298">' +
+            '</div>' +
+            '</div>' +
+            '<div class="form-group">' +
+            '<label>服务备注</label>' +
+            '<textarea id="service-notes" class="form-input" rows="3" placeholder="记录肤况变化、顾客反馈、下次建议等"></textarea>' +
+            '</div>' +
+            '</form>';
+
+        var footerHtml = '<button class="btn btn-primary" id="btn-complete-service">确认完成服务</button>' +
+            '<button class="btn btn-outline" id="btn-cancel-modal">取消</button>';
+
+        App.showModal('完成服务 - ' + appt.serviceName, html, footerHtml);
+
+        setTimeout(function () {
+            var saveBtn = document.getElementById('btn-complete-service');
+            if (saveBtn) {
+                saveBtn.onclick = function () {
+                    var result = document.getElementById('service-result').value;
+                    var amount = parseFloat(document.getElementById('service-amount').value) || 0;
+                    var notes = document.getElementById('service-notes').value.trim();
+
+                    Store.update('appointments', appt.id, { status: 'completed' });
+
+                    Store.add('serviceRecords', {
+                        appointmentId: appt.id,
+                        customerId: appt.customerId,
+                        beauticianId: appt.beauticianId,
+                        bedId: appt.bedId,
+                        date: appt.date,
+                        startTime: appt.startTime,
+                        endTime: appt.endTime,
+                        serviceType: appt.serviceType,
+                        serviceName: appt.serviceName,
+                        result: result,
+                        amount: amount,
+                        notes: notes,
+                        completedAt: new Date().toISOString()
+                    });
+
+                    App.hideModal();
+                    App.showToast('服务已完成，已记录到顾客档案', 'success');
+                    refresh();
+                };
+            }
+            document.getElementById('btn-cancel-modal').onclick = App.hideModal;
+        }, 100);
+    }
+
+    function showCustomerHistory(customerId) {
+        var customer = Store.getById('customers', customerId);
+        if (!customer) return;
+
+        var records = Store.query('serviceRecords', function (r) { return r.customerId === customerId; })
+            .sort(function (a, b) { return new Date(b.date) - new Date(a.date); });
+        var beauticians = Store.getAll('beauticians');
+
+        var serviceCountMap = {};
+        var totalAmount = 0;
+        var lastVisit = records.length > 0 ? records[0].date : '未到店';
+
+        records.forEach(function (r) {
+            serviceCountMap[r.serviceName] = (serviceCountMap[r.serviceName] || 0) + 1;
+            totalAmount += r.amount || 0;
+        });
+
+        var topServices = Object.keys(serviceCountMap)
+            .sort(function (a, b) { return serviceCountMap[b] - serviceCountMap[a]; })
+            .slice(0, 5);
+
+        var topServicesHtml = topServices.length > 0 ?
+            topServices.map(function (s) { return '<span class="stat-tag">' + s + ' ×' + serviceCountMap[s] + '</span>'; }).join('') :
+            '<span style="color:var(--text-light);font-size:12px">暂无记录</span>';
+
+        var historyHtml = records.length > 0 ? records.map(function (r, idx) {
+            var beautician = beauticians.find(function (b) { return b.id === r.beauticianId; });
+            var resultLabels = { completed: '已完成', excellent: '效果很好', normal: '正常', issues: '有小问题' };
+            return '<div class="history-item">' +
+                '<div class="history-date">' + r.date + '</div>' +
+                '<div class="history-content">' +
+                '<div style="font-weight:600">' + r.serviceName + '</div>' +
+                '<small style="color:var(--text-light)">美容师: ' + (beautician ? beautician.name : '') +
+                ' | 时段: ' + formatTime(r.startTime) + '-' + formatTime(r.endTime) +
+                (r.amount ? ' | 金额: ¥' + r.amount : '') + '</small>' +
+                (r.notes ? '<div style="margin-top:4px;font-size:12px;color:var(--text)">📝 ' + r.notes + '</div>' : '') +
+                '</div>' +
+                '<div class="history-result">' + (resultLabels[r.result] || r.result) + '</div>' +
+                '</div>';
+        }).join('') : '<div class="empty-hint">暂无护理记录</div>';
+
+        var html = '<div>' +
+            '<div style="background:linear-gradient(135deg,var(--primary-light),var(--primary));color:white;padding:16px;border-radius:var(--radius-sm);margin-bottom:16px">' +
+            '<div style="font-size:20px;font-weight:700">' + customer.name + '</div>' +
+            '<div style="opacity:0.9;font-size:12px;margin-top:4px">' + customer.phone + '</div>' +
+            '</div>' +
+            '<div class="stats-grid" style="grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:16px">' +
+            '<div class="stat-box stat-total" style="padding:10px"><div class="stat-box-value" style="font-size:18px">' + records.length + '</div><div class="stat-box-label" style="font-size:11px">到店次数</div></div>' +
+            '<div class="stat-box stat-primary" style="padding:10px"><div class="stat-box-value" style="font-size:18px">¥' + totalAmount + '</div><div class="stat-box-label" style="font-size">累计消费</div></div>' +
+            '<div class="stat-box stat-info" style="padding:10px"><div class="stat-box-value" style="font-size:14px">' + lastVisit + '</div><div class="stat-box-label" style="font-size">最近到店</div></div>' +
+            '</div>' +
+            '<div style="margin-bottom:16px">' +
+            '<div style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--primary-dark)">🏆 常做项目</div>' +
+            '<div style="display:flex;flex-wrap:wrap;gap:6px">' + topServicesHtml + '</div>' +
+            '</div>' +
+            '<div style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--primary-dark)">📋 护理历史</div>' +
+            '<div class="history-list">' + historyHtml + '</div>' +
+            '</div>';
+
+        App.showModal('顾客档案 - ' + customer.name, html, '<button class="btn btn-outline" id="btn-cancel-modal">关闭</button>');
+
+        setTimeout(function () {
+            document.getElementById('btn-cancel-modal').onclick = App.hideModal;
+        }, 100);
+    }
+
     function refresh() {
         var dateInput = document.getElementById('scheduler-date');
         var date = dateInput ? dateInput.value : new Date().toISOString().split('T')[0];
         renderBedList();
+        renderBeauticianList();
         renderTodayAppointments(date);
         renderTimeline(date);
         updateStats();
@@ -855,7 +1218,10 @@ var Scheduler = (function () {
         getAppointmentsByDate: getAppointmentsByDate,
         getBookedAppointmentsByDate: getBookedAppointmentsByDate,
         getBedSchedule: getBedSchedule,
+        isBeauticianAvailable: isBeauticianAvailable,
+        getAvailableBeauticians: getAvailableBeauticians,
         renderBedList: renderBedList,
+        renderBeauticianList: renderBeauticianList,
         renderTodayAppointments: renderTodayAppointments,
         renderTimeline: renderTimeline,
         formatTime: formatTime,
@@ -863,6 +1229,10 @@ var Scheduler = (function () {
         showCustomerForm: showCustomerForm,
         showBeauticianForm: showBeauticianForm,
         showAppointmentForm: showAppointmentForm,
+        showBeauticianScheduleForm: showBeauticianScheduleForm,
+        showBeauticianLeaveForm: showBeauticianLeaveForm,
+        showCompleteServiceForm: showCompleteServiceForm,
+        showCustomerHistory: showCustomerHistory,
         refresh: refresh,
         updateStats: updateStats
     };

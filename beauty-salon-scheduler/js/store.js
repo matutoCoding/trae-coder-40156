@@ -15,7 +15,10 @@ var Store = (function () {
         conflicts: [],
         releasedSlots: [],
         matches: [],
-        affinityScores: []
+        affinityScores: [],
+        beauticianSchedules: [],
+        beauticianLeaves: [],
+        serviceRecords: []
     };
 
     var defaultSettings = {
@@ -102,6 +105,20 @@ var Store = (function () {
                 if (a.startTime === undefined || a.endTime === undefined) {
                     errors.push('预约 #' + (idx + 1) + ' 缺少时段');
                 }
+            });
+        }
+
+        if (data.customers && Array.isArray(data.customers)) {
+            data.customers.forEach(function (c, idx) {
+                if (!c.id) errors.push('顾客 #' + (idx + 1) + ' 缺少 id');
+                if (!c.name) errors.push('顾客 #' + (idx + 1) + ' 缺少姓名');
+            });
+        }
+
+        if (data.beauticians && Array.isArray(data.beauticians)) {
+            data.beauticians.forEach(function (b, idx) {
+                if (!b.id) errors.push('美容师 #' + (idx + 1) + ' 缺少 id');
+                if (!b.name) errors.push('美容师 #' + (idx + 1) + ' 缺少姓名');
             });
         }
 

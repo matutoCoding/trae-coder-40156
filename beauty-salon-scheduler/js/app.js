@@ -82,6 +82,37 @@ var App = (function () {
         var btnAddBeautician = document.getElementById('btn-add-beautician');
         if (btnAddBeautician) btnAddBeautician.addEventListener('click', function () { Scheduler.showBeauticianForm(null); });
 
+        var btnScheduleBeautician = document.getElementById('btn-schedule-beautician');
+        if (btnScheduleBeautician) btnScheduleBeautician.addEventListener('click', function () {
+            var beauticians = Store.getAll('beauticians');
+            if (beauticians.length === 0) {
+                showToast('请先添加美容师', 'warning');
+                return;
+            }
+            var beauticianOptions = beauticians.map(function (b) {
+                return '<option value="' + b.id + '">' + b.name + '</option>';
+            }).join('');
+
+            var html = '<div class="form-group">' +
+                '<label>选择美容师 <span class="required">*</span></label>' +
+                '<select id="schedule-select" class="form-input">' + beauticianOptions + '</select>' +
+                '</div>';
+            var footerHtml = '<button class="btn btn-primary" id="btn-go-schedule">设置排班</button>' +
+                '<button class="btn btn-outline" id="btn-cancel-modal">取消</button>';
+            showModal('美容师排班', html, footerHtml);
+
+            setTimeout(function () {
+                document.getElementById('btn-go-schedule').onclick = function () {
+                    var sel = document.getElementById('schedule-select');
+                    if (sel && sel.value) {
+                        hideModal();
+                        Scheduler.showBeauticianScheduleForm(sel.value);
+                    }
+                };
+                document.getElementById('btn-cancel-modal').onclick = hideModal;
+            }, 100);
+        });
+
         var btnCheckConflict = document.getElementById('btn-check-conflict');
         if (btnCheckConflict) btnCheckConflict.addEventListener('click', function () {
             var cDate = document.getElementById('conflict-date');
@@ -174,26 +205,89 @@ var App = (function () {
         }
     }
 
-    function exportData() {
-        var dataStr = Store.exportData();
-        var blob = new Blob([dataStr], { type: 'application/json' });
-        var url = URL.createObjectURL(blob);
-
-        var a = document.createElement('a');
-        a.href = url;
+    function getDefaultExportFilename() {
         var now = new Date();
         var dateStr = now.getFullYear() +
             ('0' + (now.getMonth() + 1)).slice(-2) +
             ('0' + (now.getDate())).slice(-2) +
             ('0' + (now.getHours())).slice(-2) +
             ('0' + (now.getMinutes())).slice(-2);
-        a.download = '美容院数据备份_' + dateStr + '.json';
+        return '美容院数据备份_' + dateStr + '.json';
+    }
+
+    function unifiedExport(suggestedPath) {
+        var dataStr = Store.exportData();
+
+        if (window.desktopAPI && window.desktopAPI.saveFile) {
+            doDesktopExport(dataStr, suggestedPath);
+        } else {
+            doBrowserExport(dataStr);
+        }
+    }
+
+    function doBrowserExport(dataStr) {
+        var blob = new Blob([dataStr], { type: 'application/json' });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = getDefaultExportFilename();
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+        setTimeout(function () { URL.revokeObjectURL(url); }, 100);
+        showToast('数据导出成功', 'success');
+    }
 
-        showToast('数据导出成功，共导出完整档案', 'success');
+    async function doDesktopExport(dataStr, suggestedPath) {
+        try {
+            var filePath = suggestedPath;
+            var saveSuccess = false;
+            var verifySuccess = false;
+            var attempts = 0;
+            var maxAttempts = 5;
+
+            while (!verifySuccess && attempts < maxAttempts) {
+                attempts++;
+                saveSuccess = await window.desktopAPI.saveFile(dataStr, filePath);
+
+                if (saveSuccess && filePath) {
+                    try {
+                        var savedContent = await window.desktopAPI.readFile(filePath);
+                        var parsed = JSON.parse(savedContent);
+                        verifySuccess = parsed.magic === Store.MAGIC && parsed.version === 1 && !!parsed.data;
+                    } catch (e) {
+                        verifySuccess = false;
+                    }
+                }
+
+                if (saveSuccess && verifySuccess) {
+                    window.desktopAPI.sendExportComplete(true);
+                    showToast('数据已导出到: ' + filePath, 'success');
+                    return true;
+                } else {
+                    var reason = saveSuccess ? '文件校验不通过' : '写入文件失败';
+                    var retry = confirm('导出失败：' + reason + '\n\n是否选择其他位置重新保存？（还可尝试 ' + (maxAttempts - attempts) + ' 次）');
+                    if (retry) {
+                        filePath = null;
+                        var saveBtn = document.getElementById('btn-export-data') || document.getElementById('btn-backup-export');
+                        if (saveBtn && saveBtn.click) {
+                            saveBtn.click();
+                            return false;
+                        }
+                    } else {
+                        window.desktopAPI.sendExportComplete(false);
+                        return false;
+                    }
+                }
+            }
+
+            window.desktopAPI.sendExportComplete(false);
+            return false;
+        } catch (e) {
+            alert('导出失败: ' + e.message);
+            window.desktopAPI.sendExportComplete(false);
+            return false;
+        }
     }
 
     function importData(file) {
@@ -240,41 +334,7 @@ var App = (function () {
         if (!window.desktopAPI) return;
 
         window.desktopAPI.onExportData(async function (filePath) {
-            try {
-                var dataStr = Store.exportData();
-                if (filePath) {
-                    var saveSuccess = await window.desktopAPI.saveFile(dataStr, filePath);
-                    var verifySuccess = false;
-                    if (saveSuccess) {
-                        try {
-                            var savedContent = await window.desktopAPI.readFile(filePath);
-                            var parsed = JSON.parse(savedContent);
-                            verifySuccess = parsed.magic === Store.MAGIC && parsed.version === 1 && !!parsed.data;
-                        } catch (e) {
-                            verifySuccess = false;
-                        }
-                    }
-
-                    if (saveSuccess && verifySuccess) {
-                        window.desktopAPI.sendExportComplete(true);
-                        showToast('数据已导出到: ' + filePath, 'success');
-                    } else {
-                        window.desktopAPI.sendExportComplete(false);
-                        var retry = confirm('导出失败：文件未正确保存。\n\n失败原因：' + (saveSuccess ? '文件校验不通过' : '写入文件失败') + '\n\n是否选择其他位置重新保存？');
-                        if (retry) {
-                            setTimeout(function () {
-                                var saveBtn = document.getElementById('btn-export-data');
-                                if (saveBtn) saveBtn.click();
-                            }, 200);
-                        }
-                    }
-                } else {
-                    window.desktopAPI.sendExportComplete(false);
-                }
-            } catch (e) {
-                window.desktopAPI.sendExportComplete(false);
-                alert('导出失败: ' + e.message + '\n\n是否选择其他位置重新保存？');
-            }
+            unifiedExport(filePath);
         });
 
         window.desktopAPI.onImportData(function (filePath) {
@@ -365,7 +425,14 @@ var App = (function () {
         var btnBackupExport = document.getElementById('btn-backup-export');
         if (btnBackupExport) {
             btnBackupExport.addEventListener('click', function () {
-                exportData();
+                unifiedExport();
+            });
+        }
+
+        var btnExportData = document.getElementById('btn-export-data');
+        if (btnExportData) {
+            btnExportData.addEventListener('click', function () {
+                unifiedExport();
             });
         }
 
@@ -391,6 +458,8 @@ var App = (function () {
     }
 
     function refreshBackupPanel() {
+        renderStatsOverview();
+
         var backups = Store.getAutoBackups();
         var stats = Store.getBackupStats();
 
@@ -542,8 +611,274 @@ var App = (function () {
                         });
                     }, 100);
                     break;
+
+                case 'edit-beautician':
+                    var beautician = Store.getById('beauticians', id);
+                    if (beautician) Scheduler.showBeauticianForm(beautician);
+                    break;
+
+                case 'delete-beautician':
+                    if (confirm('确定删除该美容师？')) {
+                        Scheduler.deleteBeautician(id);
+                        refreshModule(currentModule);
+                    }
+                    break;
+
+                case 'edit-beautician-schedule':
+                    Scheduler.showBeauticianScheduleForm(id);
+                    break;
+
+                case 'add-beautician-leave':
+                    Scheduler.showBeauticianLeaveForm(id);
+                    break;
+
+                case 'complete-service':
+                    Scheduler.showCompleteServiceForm(id);
+                    break;
+
+                case 'view-customer-history':
+                    Scheduler.showCustomerHistory(id);
+                    break;
+
+                case 'view-stats-day-detail':
+                    var viewDate = target.getAttribute('data-date');
+                    showDailyStatsDetail(viewDate);
+                    break;
             }
         });
+    }
+
+    function getDateRange(range) {
+        var today = new Date();
+        var start, end;
+
+        if (range === 'day') {
+            start = new Date(today);
+            end = new Date(today);
+        } else if (range === 'week') {
+            start = new Date(today);
+            var day = start.getDay() || 7;
+            start.setDate(start.getDate() - day + 1);
+            end = new Date(start);
+            end.setDate(end.getDate() + 6);
+        } else if (range === 'month') {
+            start = new Date(today.getFullYear(), today.getMonth(), 1);
+            end = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+        }
+
+        return {
+            start: start.toISOString().split('T')[0],
+            end: end.toISOString().split('T')[0],
+            startDate: start,
+            endDate: end
+        };
+    }
+
+    function getDatesInRange(startDate, endDate) {
+        var dates = [];
+        var cur = new Date(startDate);
+        var end = new Date(endDate);
+        while (cur <= end) {
+            dates.push(cur.toISOString().split('T')[0]);
+            cur.setDate(cur.getDate() + 1);
+        }
+        return dates;
+    }
+
+    var currentStatsRange = 'day';
+
+    function bindStatsRangeButtons() {
+        document.querySelectorAll('[data-stats-range]').forEach(function (btn) {
+            if (btn._bound) return;
+            btn._bound = true;
+            btn.addEventListener('click', function () {
+                var range = this.getAttribute('data-stats-range');
+                document.querySelectorAll('[data-stats-range]').forEach(function (b) {
+                    b.classList.toggle('active', b.getAttribute('data-stats-range') === range);
+                });
+                currentStatsRange = range;
+                renderStatsOverview();
+            });
+        });
+    }
+
+    function renderStatsOverview() {
+        bindStatsRangeButtons();
+
+        var range = getDateRange(currentStatsRange);
+        var dates = getDatesInRange(range.start, range.end);
+
+        var allAppts = Store.query('appointments', function (a) {
+            return dates.indexOf(a.date) >= 0;
+        });
+
+        var allRecords = Store.query('serviceRecords', function (r) {
+            return dates.indexOf(r.date) >= 0;
+        });
+
+        var beds = Store.getAll('beds');
+
+        var totalCount = allAppts.length;
+        var completedCount = allAppts.filter(function (a) { return a.status === 'completed'; }).length;
+        var cancelledCount = allAppts.filter(function (a) { return a.status === 'cancelled'; }).length;
+
+        var totalRevenue = 0;
+        allRecords.forEach(function (r) { totalRevenue += r.amount || 0; });
+
+        var totalHours = 0;
+        allAppts.forEach(function (a) {
+            if (a.status !== 'cancelled') {
+                totalHours += (a.endTime - a.startTime);
+            }
+        });
+        var bedDays = beds.length * dates.length;
+        var maxHours = bedDays * 12;
+        var utilization = maxHours > 0 ? Math.round((totalHours / maxHours) * 100) : 0;
+
+        document.getElementById('stat-total-appointments').textContent = totalCount;
+        document.getElementById('stat-completed-appointments').textContent = completedCount;
+        document.getElementById('stat-cancelled-appointments').textContent = cancelledCount;
+        document.getElementById('stat-bed-utilization').textContent = utilization + '%';
+        document.getElementById('stat-total-revenue').textContent = '¥' + totalRevenue;
+
+        var beauticianCountMap = {};
+        var beauticianRevenueMap = {};
+        var beauticians = Store.getAll('beauticians');
+        allAppts.forEach(function (a) {
+            if (a.status === 'cancelled') return;
+            beauticianCountMap[a.beauticianId] = (beauticianCountMap[a.beauticianId] || 0) + 1;
+        });
+        allRecords.forEach(function (r) {
+            beauticianRevenueMap[r.beauticianId] = (beauticianRevenueMap[r.beauticianId] || 0) + (r.amount || 0);
+        });
+
+        var beauticianStats = Object.keys(beauticianCountMap).map(function (bid) {
+            var b = beauticians.find(function (x) { return x.id === bid; });
+            return {
+                id: bid,
+                name: b ? b.name : '未知',
+                count: beauticianCountMap[bid],
+                revenue: beauticianRevenueMap[bid] || 0
+            };
+        }).sort(function (a, b) { return b.count - a.count; });
+
+        var maxBeautCount = beauticianStats.length > 0 ? beauticianStats[0].count : 1;
+        var bsHtml = beauticianStats.length > 0 ? beauticianStats.map(function (b) {
+            var pct = Math.round((b.count / maxBeautCount) * 100);
+            return '<div class="stat-bar-item">' +
+                '<div class="stat-bar-label">' +
+                '<span>' + b.name + '</span>' +
+                '<span>' + b.count + '次 · ¥' + b.revenue + '</span>' +
+                '</div>' +
+                '<div class="stat-bar-bar"><div class="stat-bar-fill stat-bar-beautician" style="width:' + pct + '%"></div></div>' +
+                '</div>';
+        }).join('') : '<div class="empty-hint" style="padding:10px">暂无数据</div>';
+
+        document.getElementById('beautician-service-stats').innerHTML = bsHtml;
+
+        var serviceTypeMap = {};
+        allAppts.forEach(function (a) {
+            if (a.status === 'cancelled') return;
+            serviceTypeMap[a.serviceName] = (serviceTypeMap[a.serviceName] || 0) + 1;
+        });
+        var serviceTypeArr = Object.keys(serviceTypeMap).map(function (name) {
+            return { name: name, count: serviceTypeMap[name] };
+        }).sort(function (a, b) { return b.count - a.count; });
+
+        var maxServiceCount = serviceTypeArr.length > 0 ? serviceTypeArr[0].count : 1;
+        var ssHtml = serviceTypeArr.length > 0 ? serviceTypeArr.map(function (s) {
+            var pct = Math.round((s.count / maxServiceCount) * 100);
+            return '<div class="stat-bar-item">' +
+                '<div class="stat-bar-label">' +
+                '<span>' + s.name + '</span>' +
+                '<span>' + s.count + '次</span>' +
+                '</div>' +
+                '<div class="stat-bar-bar"><div class="stat-bar-fill stat-bar-service" style="width:' + pct + '%"></div></div>' +
+                '</div>';
+        }).join('') : '<div class="empty-hint" style="padding:10px">暂无数据</div>';
+
+        document.getElementById('service-type-stats').innerHTML = ssHtml;
+
+        var dailyStats = {};
+        dates.forEach(function (d) {
+            dailyStats[d] = { total: 0, completed: 0, cancelled: 0, revenue: 0 };
+        });
+        allAppts.forEach(function (a) {
+            if (!dailyStats[a.date]) return;
+            dailyStats[a.date].total++;
+            if (a.status === 'completed') dailyStats[a.date].completed++;
+            if (a.status === 'cancelled') dailyStats[a.date].cancelled++;
+        });
+        allRecords.forEach(function (r) {
+            if (dailyStats[r.date]) dailyStats[r.date].revenue += r.amount || 0;
+        });
+
+        var maxDailyCount = 0;
+        dates.forEach(function (d) { if (dailyStats[d].total > maxDailyCount) maxDailyCount = dailyStats[d].total; });
+
+        var dsHtml = dates.map(function (d) {
+            var stats = dailyStats[d];
+            var pct = maxDailyCount > 0 ? Math.round((stats.total / maxDailyCount) * 100) : 0;
+            var dObj = new Date(d + 'T00:00:00');
+            var dayLabel = (dObj.getMonth() + 1) + '/' + dObj.getDate();
+            var weekdayLabel = ['日', '一', '二', '三', '四', '五', '六'][dObj.getDay()];
+
+            return '<div class="daily-stat-item" data-action="view-stats-day-detail" data-date="' + d + '">' +
+                '<div class="daily-stat-header">' +
+                '<span class="daily-stat-date">' + dayLabel + ' 周' + weekdayLabel + '</span>' +
+                '<span class="daily-stat-badge">' + stats.total + '笔</span>' +
+                '</div>' +
+                '<div class="stat-bar-bar" style="height:18px;margin:6px 0">' +
+                '<div class="stat-bar-fill stat-bar-daily" style="width:' + pct + '%"></div>' +
+                '</div>' +
+                '<div class="daily-stat-footer">' +
+                '<span style="color:var(--success)">✅ ' + stats.completed + '</span>' +
+                '<span style="color:var(--warning)">❌ ' + stats.cancelled + '</span>' +
+                '<span style="color:var(--primary);font-weight:600">¥' + stats.revenue + '</span>' +
+                '</div>' +
+                '</div>';
+        }).join('');
+
+        document.getElementById('daily-detail-stats').innerHTML = dsHtml;
+    }
+
+    function showDailyStatsDetail(date) {
+        var appts = Store.query('appointments', function (a) { return a.date === date; });
+        var records = Store.query('serviceRecords', function (r) { return r.date === date; });
+        var customers = Store.getAll('customers');
+        var beauticians = Store.getAll('beauticians');
+
+        var totalRevenue = 0;
+        records.forEach(function (r) { totalRevenue += r.amount || 0; });
+
+        var statusMap = { booked: '已预约', completed: '已完成', cancelled: '已取消' };
+
+        var apptsHtml = appts.length > 0 ? appts.sort(function (a, b) { return a.startTime - b.startTime; }).map(function (a) {
+            var c = customers.find(function (x) { return x.id === a.customerId; });
+            var b = beauticians.find(function (x) { return x.id === a.beauticianId; });
+            var statusClass = a.status === 'completed' ? 'stat-tag-success' : (a.status === 'cancelled' ? 'stat-tag-warning' : 'stat-tag-info');
+            return '<div class="history-item">' +
+                '<div class="history-date">' + Scheduler.formatTime(a.startTime) + '</div>' +
+                '<div class="history-content">' +
+                '<div style="font-weight:600">' + (c ? c.name : '未知') + ' · ' + a.serviceName + '</div>' +
+                '<small style="color:var(--text-light)">美容师: ' + (b ? b.name : '') + '</small>' +
+                '</div>' +
+                '<span class="stat-tag ' + statusClass + '">' + (statusMap[a.status] || a.status) + '</span>' +
+                '</div>';
+        }).join('') : '<div class="empty-hint" style="padding:10px">暂无预约</div>';
+
+        var html = '<div>' +
+            '<div style="background:linear-gradient(135deg,var(--primary-light),var(--primary));color:white;padding:16px;border-radius:var(--radius-sm);margin-bottom:16px">' +
+            '<div style="font-size:18px;font-weight:700">' + date + ' 预约明细</div>' +
+            '<div style="opacity:0.9;margin-top:6px;font-size:13px">共 ' + appts.length + ' 笔预约 · 营收 ¥' + totalRevenue + '</div>' +
+            '</div>' +
+            '<div class="history-list">' + apptsHtml + '</div>' +
+            '</div>';
+
+        showModal(date + ' 经营明细', html, '<button class="btn btn-outline" id="btn-cancel-modal">关闭</button>');
+        setTimeout(function () {
+            document.getElementById('btn-cancel-modal').onclick = hideModal;
+        }, 100);
     }
 
     function showAppointmentDetail(id) {
@@ -641,7 +976,9 @@ var App = (function () {
         switchModule: switchModule,
         refreshModule: refreshModule,
         refreshBackupPanel: refreshBackupPanel,
-        exportData: exportData,
-        importData: importData
+        exportData: unifiedExport,
+        importData: importData,
+        unifiedExport: unifiedExport,
+        renderStatsOverview: renderStatsOverview
     };
 })();

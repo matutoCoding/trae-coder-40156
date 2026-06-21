@@ -71,6 +71,7 @@
                             <button class="btn btn-secondary" id="btn-add-appointment">+ 新建预约</button>
                             <button class="btn btn-outline" id="btn-add-customer">+ 顾客登记</button>
                             <button class="btn btn-outline" id="btn-add-beautician">+ 美容师登记</button>
+                            <button class="btn btn-outline" id="btn-schedule-beautician">⏰ 排班设置</button>
                         </div>
                         <div class="toolbar-right">
                             <input type="date" id="scheduler-date" class="input-date">
@@ -84,6 +85,10 @@
                             <div class="info-card">
                                 <h3>美容床列表</h3>
                                 <div id="bed-list" class="item-list"></div>
+                            </div>
+                            <div class="info-card">
+                                <h3>美容师列表</h3>
+                                <div id="beautician-list" class="item-list"></div>
                             </div>
                             <div class="info-card">
                                 <h3>今日预约</h3>
@@ -192,6 +197,54 @@
                             <span class="backup-stats" id="backup-stats"></span>
                         </div>
                     </div>
+
+                    <div class="info-card highlight-card" style="margin-bottom:20px">
+                        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+                            <h3 style="margin:0;border:none;padding:0">📊 经营概览</h3>
+                            <div class="view-toggle" style="margin-left:0">
+                                <button class="view-toggle-btn active" data-stats-range="day">日</button>
+                                <button class="view-toggle-btn" data-stats-range="week">周</button>
+                                <button class="view-toggle-btn" data-stats-range="month">月</button>
+                            </div>
+                        </div>
+                        <div class="stats-grid">
+                            <div class="stat-box stat-total">
+                                <div class="stat-box-value" id="stat-total-appointments">0</div>
+                                <div class="stat-box-label">总预约数</div>
+                            </div>
+                            <div class="stat-box stat-success">
+                                <div class="stat-box-value" id="stat-completed-appointments">0</div>
+                                <div class="stat-box-label">已完成</div>
+                            </div>
+                            <div class="stat-box stat-warning">
+                                <div class="stat-box-value" id="stat-cancelled-appointments">0</div>
+                                <div class="stat-box-label">已取消</div>
+                            </div>
+                            <div class="stat-box stat-info">
+                                <div class="stat-box-value" id="stat-bed-utilization">0%</div>
+                                <div class="stat-box-label">床位利用率</div>
+                            </div>
+                            <div class="stat-box stat-primary">
+                                <div class="stat-box-value" id="stat-total-revenue">¥0</div>
+                                <div class="stat-box-label">营收</div>
+                            </div>
+                        </div>
+                        <div class="stats-detail-grid">
+                            <div class="stats-column">
+                                <h4>👩 美容师服务量</h4>
+                                <div id="beautician-service-stats" class="stats-list"></div>
+                            </div>
+                            <div class="stats-column">
+                                <h4>💆 热门护理项目</h4>
+                                <div id="service-type-stats" class="stats-list"></div>
+                            </div>
+                            <div class="stats-column stats-wide">
+                                <h4>📅 每日明细</h4>
+                                <div id="daily-detail-stats" class="stats-list daily-list"></div>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="backup-grid">
                         <div class="backup-main">
                             <div class="info-card highlight-card">
