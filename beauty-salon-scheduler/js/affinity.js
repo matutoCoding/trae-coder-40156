@@ -95,7 +95,15 @@ var Affinity = (function () {
                     matchedConcerns++;
                 }
             });
-            var ratio = Math.min(matchedConcerns / Math.max(skinProfile.concerns.length, 1), 1);
+            var matchRatio = matchedConcerns / Math.max(skinProfile.concerns.length, 1);
+            var bonus = 0;
+            if (beautician.specialties.indexOf('面部护理') >= 0 && matchRatio > 0) {
+                bonus += 0.1;
+            }
+            if (beautician.specialties.indexOf('芳香疗法') >= 0 && skinProfile.concerns.indexOf('敏感泛红') >= 0) {
+                bonus += 0.05;
+            }
+            var ratio = Math.min(matchRatio + bonus, 1);
             scores.specialtyMatch = Math.round(ratio * 30);
         } else {
             scores.specialtyMatch = 10;

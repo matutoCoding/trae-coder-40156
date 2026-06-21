@@ -405,7 +405,7 @@ var Scheduler = (function () {
         var isEdit = !!beautician;
         var title = isEdit ? '编辑美容师' : '美容师登记';
 
-        var allSpecs = ['面部护理', '身体SPA', '抗衰老', '美白', '纤体塑形', '敏感肌修复', '深层清洁', '补水保湿', '眼部护理', '芳香疗法'];
+        var allSpecs = ['面部护理', '身体SPA', '抗衰老', '美白', '纤体塑形', '敏感肌修复', '深层清洁', '补水保湿', '眼部护理', '颈部护理', '芳香疗法'];
         var allExpertise = ['normal', 'dry', 'oily', 'combination', 'sensitive'];
 
         var specsHtml = allSpecs.map(function (s) {

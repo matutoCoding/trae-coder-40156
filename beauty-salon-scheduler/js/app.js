@@ -6,6 +6,8 @@ var App = (function () {
         setupToolbarButtons();
         setupDateInputs();
         setupGlobalClickHandlers();
+        setupDataActions();
+        setupDesktopIntegration();
         switchModule('scheduler');
     }
 
@@ -140,6 +142,140 @@ var App = (function () {
                 Conflict.refresh(conflictDate.value);
             });
         }
+    }
+
+    function setupDataActions() {
+        var exportBtn = document.getElementById('btn-export-data');
+        if (exportBtn) {
+            exportBtn.addEventListener('click', function () {
+                exportData();
+            });
+        }
+
+        var importBtn = document.getElementById('btn-import-data');
+        var fileInput = document.getElementById('import-file-input');
+        if (importBtn && fileInput) {
+            importBtn.addEventListener('click', function () {
+                fileInput.click();
+            });
+            fileInput.addEventListener('change', function (e) {
+                if (e.target.files && e.target.files.length > 0) {
+                    var file = e.target.files[0];
+                    importData(file);
+                    fileInput.value = '';
+                }
+            });
+        }
+    }
+
+    function exportData() {
+        var dataStr = Store.exportData();
+        var blob = new Blob([dataStr], { type: 'application/json' });
+        var url = URL.createObjectURL(blob);
+
+        var a = document.createElement('a');
+        a.href = url;
+        var now = new Date();
+        var dateStr = now.getFullYear() +
+            ('0' + (now.getMonth() + 1)).slice(-2) +
+            ('0' + now.getDate()).slice(-2) +
+            ('0' + now.getHours()).slice(-2) +
+            ('0' + now.getMinutes()).slice(-2);
+        a.download = '美容院数据备份_' + dateStr + '.json';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        showToast('数据导出成功，共导出完整档案', 'success');
+    }
+
+    function importData(file) {
+        if (!file) return;
+
+        if (!confirm('导入数据将覆盖当前所有数据，确定继续吗？\n\n建议先导出当前数据进行备份。')) {
+            return;
+        }
+
+        var reader = new FileReader();
+        reader.onload = function (e) {
+            try {
+                var jsonStr = e.target.result;
+                var success = Store.importData(jsonStr);
+                if (success) {
+                    Scheduler.refresh();
+                    Conflict.refresh(new Date().toISOString().split('T')[0]);
+                    Matching.refresh();
+                    Affinity.refresh();
+                    showToast('数据导入成功！', 'success');
+                } else {
+                    showToast('导入失败：文件格式不正确', 'error');
+                }
+            } catch (err) {
+                showToast('导入失败：' + err.message, 'error');
+            }
+        };
+        reader.onerror = function () {
+            showToast('读取文件失败', 'error');
+        };
+        reader.readAsText(file);
+    }
+
+    function setupDesktopIntegration() {
+        if (!window.desktopAPI) return;
+
+        window.desktopAPI.onExportData(function (filePath) {
+            try {
+                var dataStr = Store.exportData();
+                if (filePath) {
+                    window.desktopAPI.saveFile(dataStr, filePath);
+                    window.desktopAPI.sendExportComplete(true);
+                    showToast('数据已导出到: ' + filePath, 'success');
+                } else {
+                    window.desktopAPI.sendExportComplete(false);
+                }
+            } catch (e) {
+                window.desktopAPI.sendExportComplete(false);
+                showToast('导出失败: ' + e.message, 'error');
+            }
+        });
+
+        window.desktopAPI.onImportData(function (filePath) {
+            if (!filePath) return;
+            window.desktopAPI.readFile(filePath).then(function (content) {
+                if (!content) {
+                    window.desktopAPI.sendImportComplete(false);
+                    showToast('导入失败：无法读取文件', 'error');
+                    return;
+                }
+                try {
+                    var success = Store.importData(content);
+                    if (success) {
+                        Scheduler.refresh();
+                        Conflict.refresh(new Date().toISOString().split('T')[0]);
+                        Matching.refresh();
+                        Affinity.refresh();
+                        window.desktopAPI.sendImportComplete(true);
+                        showToast('数据导入成功！', 'success');
+                    } else {
+                        window.desktopAPI.sendImportComplete(false);
+                        showToast('导入失败：文件格式不正确', 'error');
+                    }
+                } catch (e) {
+                    window.desktopAPI.sendImportComplete(false);
+                    showToast('导入失败: ' + e.message, 'error');
+                }
+            });
+        });
+
+        window.desktopAPI.onClearData(function () {
+            Store.clearAll();
+            Scheduler.refresh();
+            Conflict.refresh(new Date().toISOString().split('T')[0]);
+            Matching.refresh();
+            Affinity.refresh();
+            showToast('本地数据已全部清除', 'success');
+        });
     }
 
     function setupGlobalClickHandlers() {
