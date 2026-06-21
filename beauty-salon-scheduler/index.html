@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>美容院护理排程系统</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div class="app-container">
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo-icon">✿</div>
+                <h1>美容护理排程</h1>
+                <p class="subtitle">智能排期 · 冲突校验 · 双向撮合</p>
+            </div>
+            <nav class="sidebar-nav">
+                <a href="#" class="nav-item active" data-module="scheduler">
+                    <span class="nav-icon">📅</span>
+                    <span class="nav-label">护理排期</span>
+                </a>
+                <a href="#" class="nav-item" data-module="conflict">
+                    <span class="nav-icon">🛡️</span>
+                    <span class="nav-label">冲突校验</span>
+                </a>
+                <a href="#" class="nav-item" data-module="matching">
+                    <span class="nav-icon">🤝</span>
+                    <span class="nav-label">双向撮合</span>
+                </a>
+                <a href="#" class="nav-item" data-module="affinity">
+                    <span class="nav-icon">⭐</span>
+                    <span class="nav-label">契合排序</span>
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <div class="stat-card">
+                    <span class="stat-value" id="stat-beds">0</span>
+                    <span class="stat-label">美容床</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-value" id="stat-today">0</span>
+                    <span class="stat-label">今日预约</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-value" id="stat-matches">0</span>
+                    <span class="stat-label">已撮合</span>
+                </div>
+            </div>
+        </aside>
+
+        <main class="main-content">
+            <header class="content-header">
+                <h2 id="module-title">护理排期</h2>
+                <div class="header-actions" id="header-actions"></div>
+            </header>
+
+            <div class="content-body">
+                <div class="module-panel active" id="panel-scheduler">
+                    <div class="panel-toolbar">
+                        <div class="toolbar-left">
+                            <button class="btn btn-primary" id="btn-add-bed">+ 美容床建档</button>
+                            <button class="btn btn-secondary" id="btn-add-appointment">+ 新建预约</button>
+                            <button class="btn btn-outline" id="btn-add-customer">+ 顾客登记</button>
+                            <button class="btn btn-outline" id="btn-add-beautician">+ 美容师登记</button>
+                        </div>
+                        <div class="toolbar-right">
+                            <input type="date" id="scheduler-date" class="input-date">
+                        </div>
+                    </div>
+                    <div class="scheduler-grid">
+                        <div class="schedule-timeline" id="schedule-timeline">
+                            <div class="timeline-placeholder">请先添加美容床和预约</div>
+                        </div>
+                        <div class="schedule-sidebar">
+                            <div class="info-card">
+                                <h3>美容床列表</h3>
+                                <div id="bed-list" class="item-list"></div>
+                            </div>
+                            <div class="info-card">
+                                <h3>今日预约</h3>
+                                <div id="today-appointments" class="item-list"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="module-panel" id="panel-conflict">
+                    <div class="panel-toolbar">
+                        <div class="toolbar-left">
+                            <button class="btn btn-primary" id="btn-check-conflict">🔍 检测冲突</button>
+                            <button class="btn btn-secondary" id="btn-view-released">📋 已释放时段</button>
+                        </div>
+                        <div class="toolbar-right">
+                            <input type="date" id="conflict-date" class="input-date">
+                        </div>
+                    </div>
+                    <div class="conflict-grid">
+                        <div class="conflict-timeline-section">
+                            <h3>时段占用时间线</h3>
+                            <div id="conflict-timeline" class="timeline-visual"></div>
+                        </div>
+                        <div class="conflict-detail-section">
+                            <div class="info-card">
+                                <h3>冲突记录</h3>
+                                <div id="conflict-list" class="item-list"></div>
+                            </div>
+                            <div class="info-card">
+                                <h3>已取消/已释放</h3>
+                                <div id="released-list" class="item-list"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="module-panel" id="panel-matching">
+                    <div class="panel-toolbar">
+                        <div class="toolbar-left">
+                            <button class="btn btn-primary" id="btn-register-intention">📝 登记意愿</button>
+                            <button class="btn btn-secondary" id="btn-do-match">🔄 执行撮合</button>
+                        </div>
+                    </div>
+                    <div class="matching-grid">
+                        <div class="matching-column">
+                            <div class="info-card">
+                                <h3>顾客意愿</h3>
+                                <div id="customer-intentions" class="item-list"></div>
+                            </div>
+                        </div>
+                        <div class="matching-column matching-center">
+                            <div class="info-card highlight-card">
+                                <h3>✅ 撮合成功（双向意愿）</h3>
+                                <div id="match-success" class="item-list"></div>
+                            </div>
+                            <div class="info-card warning-card">
+                                <h3>⏳ 待撮合（单方意愿）</h3>
+                                <div id="match-pending" class="item-list"></div>
+                            </div>
+                        </div>
+                        <div class="matching-column">
+                            <div class="info-card">
+                                <h3>美容师意愿</h3>
+                                <div id="beautician-intentions" class="item-list"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="module-panel" id="panel-affinity">
+                    <div class="panel-toolbar">
+                        <div class="toolbar-left">
+                            <button class="btn btn-primary" id="btn-add-skin-profile">🧴 建立肤质档案</button>
+                            <button class="btn btn-secondary" id="btn-calc-affinity">📊 计算契合度</button>
+                        </div>
+                    </div>
+                    <div class="affinity-grid">
+                        <div class="affinity-column">
+                            <div class="info-card">
+                                <h3>肤质档案</h3>
+                                <div id="skin-profiles" class="item-list"></div>
+                            </div>
+                        </div>
+                        <div class="affinity-column affinity-wide">
+                            <div class="info-card highlight-card">
+                                <h3>🏆 契合度排行</h3>
+                                <div id="affinity-ranking" class="ranking-list"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <div class="modal-overlay" id="modal-overlay">
+        <div class="modal" id="modal">
+            <div class="modal-header">
+                <h3 id="modal-title">标题</h3>
+                <button class="modal-close" id="modal-close">&times;</button>
+            </div>
+            <div class="modal-body" id="modal-body"></div>
+            <div class="modal-footer" id="modal-footer"></div>
+        </div>
+    </div>
+
+    <div class="toast-container" id="toast-container"></div>
+
+    <script src="js/store.js"></script>
+    <script src="js/scheduler.js"></script>
+    <script src="js/conflict.js"></script>
+    <script src="js/matching.js"></script>
+    <script src="js/affinity.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
