@@ -29,6 +29,10 @@ contextBridge.exposeInMainWorld('desktopAPI', {
     return ipcRenderer.invoke('read-file', filePath);
   },
 
+  showSaveDialog: (defaultFilename) => {
+    return ipcRenderer.invoke('show-save-dialog', defaultFilename);
+  },
+
   sendExportComplete: (success) => {
     ipcRenderer.send('export-complete', success);
   },

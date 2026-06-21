@@ -185,7 +185,7 @@ var App = (function () {
         var exportBtn = document.getElementById('btn-export-data');
         if (exportBtn) {
             exportBtn.addEventListener('click', function () {
-                exportData();
+                unifiedExport();
             });
         }
 
@@ -248,6 +248,15 @@ var App = (function () {
 
             while (!verifySuccess && attempts < maxAttempts) {
                 attempts++;
+
+                if (!filePath) {
+                    var dialogResult = await window.desktopAPI.showSaveDialog(getDefaultExportFilename());
+                    if (!dialogResult || dialogResult.canceled || !dialogResult.filePath) {
+                        return false;
+                    }
+                    filePath = dialogResult.filePath;
+                }
+
                 saveSuccess = await window.desktopAPI.saveFile(dataStr, filePath);
 
                 if (saveSuccess && filePath) {
@@ -269,11 +278,6 @@ var App = (function () {
                     var retry = confirm('导出失败：' + reason + '\n\n是否选择其他位置重新保存？（还可尝试 ' + (maxAttempts - attempts) + ' 次）');
                     if (retry) {
                         filePath = null;
-                        var saveBtn = document.getElementById('btn-export-data') || document.getElementById('btn-backup-export');
-                        if (saveBtn && saveBtn.click) {
-                            saveBtn.click();
-                            return false;
-                        }
                     } else {
                         window.desktopAPI.sendExportComplete(false);
                         return false;
@@ -643,6 +647,18 @@ var App = (function () {
                 case 'view-stats-day-detail':
                     var viewDate = target.getAttribute('data-date');
                     showDailyStatsDetail(viewDate);
+                    break;
+
+                case 'edit-customer':
+                    var customer = Store.getById('customers', id);
+                    if (customer) Scheduler.showCustomerForm(customer);
+                    break;
+
+                case 'delete-customer':
+                    if (confirm('确定删除该顾客？相关护理记录将保留。')) {
+                        Scheduler.deleteCustomer(id);
+                        refreshModule(currentModule);
+                    }
                     break;
             }
         });

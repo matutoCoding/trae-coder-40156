@@ -353,3 +353,21 @@ ipcMain.handle('read-file', async (event, filePath) => {
     return null;
   }
 });
+
+ipcMain.handle('show-save-dialog', async (event, defaultFilename) => {
+  try {
+    if (!mainWindow) return { canceled: true };
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: '导出数据备份',
+      defaultPath: defaultFilename || ('美容院数据备份_' + getDateString() + '.json'),
+      filters: [
+        { name: 'JSON 数据文件', extensions: ['json'] },
+        { name: '所有文件', extensions: ['*'] }
+      ]
+    });
+    return result;
+  } catch (e) {
+    console.error('Show save dialog error:', e);
+    return { canceled: true };
+  }
+});

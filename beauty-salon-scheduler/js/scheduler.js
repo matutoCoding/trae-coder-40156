@@ -278,6 +278,41 @@ var Scheduler = (function () {
         }).join('');
     }
 
+    function renderCustomerList() {
+        var customers = Store.getAll('customers');
+        var container = document.getElementById('customer-list');
+        if (!container) return;
+
+        if (customers.length === 0) {
+            container.innerHTML = '<div class="empty-hint">暂无顾客，请点击"顾客登记"添加</div>';
+            return;
+        }
+
+        var records = Store.getAll('serviceRecords');
+
+        container.innerHTML = customers.slice(0, 20).map(function (c) {
+            var customerRecords = records.filter(function (r) { return r.customerId === c.id; });
+            var lastVisit = customerRecords.length > 0 ?
+                customerRecords.sort(function (a, b) { return new Date(b.date) - new Date(a.date); })[0].date :
+                '未到店';
+
+            return '<div class="list-item customer-item" data-id="' + c.id + '">' +
+                '<div class="item-main">' +
+                '<span class="item-icon">👤</span>' +
+                '<div class="item-info">' +
+                '<strong>' + c.name + '</strong>' +
+                '<small>' + (c.phone || '无电话') + ' · 共' + customerRecords.length + '次</small>' +
+                '<small style="color:var(--text-light);font-size:10px">最近: ' + lastVisit + '</small>' +
+                '</div>' +
+                '</div>' +
+                '<div class="item-actions">' +
+                '<button class="btn-icon" data-action="view-customer-history" data-id="' + c.id + '" title="查看档案">📋</button>' +
+                '<button class="btn-icon btn-edit" data-action="edit-customer" data-id="' + c.id + '" title="编辑">✏️</button>' +
+                '</div>' +
+                '</div>';
+        }).join('');
+    }
+
     function renderTodayAppointments(date) {
         var appts = getBookedAppointmentsByDate(date);
         var container = document.getElementById('today-appointments');
@@ -871,10 +906,41 @@ var Scheduler = (function () {
             var serviceSelect = document.getElementById('appt-service');
             var endSelect = document.getElementById('appt-end');
             var startSelect = document.getElementById('appt-start');
+            var dateSelect = document.getElementById('appt-date');
+            var beauticianSelect = document.getElementById('appt-beautician');
+            var allBeauticians = Store.getAll('beauticians');
+
+            function updateAvailableBeauticians() {
+                if (!dateSelect || !startSelect || !endSelect || !beauticianSelect) return;
+
+                var curDate = dateSelect.value;
+                var curStart = parseFloat(startSelect.value);
+                var curEnd = parseFloat(endSelect.value);
+                var currentValue = beauticianSelect.value;
+
+                var available = allBeauticians.filter(function (b) {
+                    return isBeauticianAvailable(b.id, curDate, curStart, curEnd);
+                });
+
+                if (available.length === 0) {
+                    beauticianSelect.innerHTML = '<option value="">该时段无可用美容师</option>';
+                    return;
+                }
+
+                beauticianSelect.innerHTML = available.map(function (b) {
+                    var sel = currentValue === b.id ? 'selected' : '';
+                    return '<option value="' + b.id + '" ' + sel + '>' + b.name + '</option>';
+                }).join('');
+
+                if (!available.find(function (b) { return b.id === currentValue; })) {
+                    if (available.length > 0) beauticianSelect.value = available[0].id;
+                    App.showToast('原美容师此时段不可用，已自动切换', 'warning');
+                }
+            }
 
             function autoSetEndTime() {
                 var svc = SERVICE_TYPES.find(function (s) { return s.id === serviceSelect.value; });
-                if (svc) {
+                if (svc && startSelect && endSelect) {
                     var startHour = parseFloat(startSelect.value);
                     var endHour = startHour + svc.duration / 60;
                     for (var i = 0; i < TIME_SLOTS.length; i++) {
@@ -884,10 +950,14 @@ var Scheduler = (function () {
                         }
                     }
                 }
+                updateAvailableBeauticians();
             }
 
-            serviceSelect.onchange = autoSetEndTime;
-            startSelect.onchange = autoSetEndTime;
+            if (serviceSelect) serviceSelect.onchange = autoSetEndTime;
+            if (startSelect) startSelect.onchange = function () { autoSetEndTime(); };
+            if (endSelect) endSelect.onchange = updateAvailableBeauticians;
+            if (dateSelect) dateSelect.onchange = updateAvailableBeauticians;
+
             autoSetEndTime();
 
             var saveBtn = document.getElementById('btn-save-appointment');
@@ -906,6 +976,12 @@ var Scheduler = (function () {
 
                     if (data.endTime <= data.startTime) {
                         App.showToast('结束时间必须晚于开始时间', 'error');
+                        return;
+                    }
+
+                    if (!isBeauticianAvailable(data.beauticianId, data.date, data.startTime, data.endTime)) {
+                        App.showToast('所选美容师此时段不在班或已请假，请重新选择', 'error');
+                        updateAvailableBeauticians();
                         return;
                     }
 
@@ -1180,6 +1256,7 @@ var Scheduler = (function () {
         var date = dateInput ? dateInput.value : new Date().toISOString().split('T')[0];
         renderBedList();
         renderBeauticianList();
+        renderCustomerList();
         renderTodayAppointments(date);
         renderTimeline(date);
         updateStats();
@@ -1222,6 +1299,7 @@ var Scheduler = (function () {
         getAvailableBeauticians: getAvailableBeauticians,
         renderBedList: renderBedList,
         renderBeauticianList: renderBeauticianList,
+        renderCustomerList: renderCustomerList,
         renderTodayAppointments: renderTodayAppointments,
         renderTimeline: renderTimeline,
         formatTime: formatTime,
