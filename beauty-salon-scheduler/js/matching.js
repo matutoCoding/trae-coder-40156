@@ -215,6 +215,7 @@ var Matching = (function () {
                 '<small>契合度: ' + m.compatibilityScore + '分 | 撮合于 ' + matchedDate + '</small>' +
                 '</div>' +
                 '<div class="item-actions">' +
+                '<button class="btn btn-sm btn-primary btn-match-create" data-action="create-appointment-from-match" data-customer="' + m.customerId + '" data-beautician="' + m.beauticianId + '">📅 创建预约</button>' +
                 '<button class="btn btn-sm btn-warning" data-action="cancel-match" data-id="' + m.id + '">取消撮合</button>' +
                 '</div>' +
                 '</div>';

@@ -5,6 +5,13 @@ var Scheduler = (function () {
         TIME_SLOTS.push({ hour: h + 0.5, label: (h < 10 ? '0' : '') + h + ':30' });
     }
 
+    var currentView = 'day';
+    var filters = {
+        beauticianId: '',
+        serviceType: '',
+        bedId: ''
+    };
+
     var SERVICE_TYPES = [
         { id: 'facial_basic', name: '基础面部护理', duration: 60 },
         { id: 'facial_deep', name: '深层清洁护理', duration: 90 },
@@ -230,18 +237,91 @@ var Scheduler = (function () {
         }).join('');
     }
 
-    function renderTimeline(date) {
-        var beds = Store.getAll('beds');
+    function renderFilterBar() {
         var container = document.getElementById('schedule-timeline');
         if (!container) return;
 
+        var beauticians = Store.getAll('beauticians');
+        var beds = Store.getAll('beds');
+
+        var beauticianOptions = '<option value="">全部美容师</option>' +
+            beauticians.map(function (b) {
+                var sel = filters.beauticianId === b.id ? 'selected' : '';
+                return '<option value="' + b.id + '" ' + sel + '>' + b.name + '</option>';
+            }).join('');
+
+        var serviceOptions = '<option value="">全部项目</option>' +
+            SERVICE_TYPES.map(function (s) {
+                var sel = filters.serviceType === s.id ? 'selected' : '';
+                return '<option value="' + s.id + '" ' + sel + '>' + s.name + '</option>';
+            }).join('');
+
+        var bedOptions = '<option value="">全部美容床</option>' +
+            beds.map(function (b) {
+                var sel = filters.bedId === b.id ? 'selected' : '';
+                return '<option value="' + b.id + '" ' + sel + '>' + b.name + '</option>';
+            }).join('');
+
+        var viewDayClass = currentView === 'day' ? 'active' : '';
+        var viewWeekClass = currentView === 'week' ? 'active' : '';
+
+        var html = '<div class="filter-bar">' +
+            '<div class="filter-group">' +
+            '<label class="filter-label">美容师:</label>' +
+            '<select class="filter-select" id="filter-beautician">' + beauticianOptions + '</select>' +
+            '</div>' +
+            '<div class="filter-group">' +
+            '<label class="filter-label">项目:</label>' +
+            '<select class="filter-select" id="filter-service">' + serviceOptions + '</select>' +
+            '</div>' +
+            '<div class="filter-group">' +
+            '<label class="filter-label">美容床:</label>' +
+            '<select class="filter-select" id="filter-bed">' + bedOptions + '</select>' +
+            '</div>' +
+            '<div class="view-toggle">' +
+            '<button class="view-toggle-btn ' + viewDayClass + '" data-view="day">日视图</button>' +
+            '<button class="view-toggle-btn ' + viewWeekClass + '" data-view="week">周视图</button>' +
+            '</div>' +
+            '</div>';
+
+        return html;
+    }
+
+    function matchFilter(appt) {
+        if (filters.beauticianId && appt.beauticianId !== filters.beauticianId) return false;
+        if (filters.serviceType && appt.serviceType !== filters.serviceType) return false;
+        if (filters.bedId && appt.bedId !== filters.bedId) return false;
+        return true;
+    }
+
+    function renderTimeline(date) {
+        var container = document.getElementById('schedule-timeline');
+        if (!container) return;
+
+        var html = renderFilterBar();
+
+        if (currentView === 'day') {
+            html += renderDayView(date);
+        } else {
+            html += renderWeekView(date);
+        }
+
+        container.innerHTML = html;
+        bindFilterEvents();
+        bindViewToggleEvents();
+    }
+
+    function renderDayView(date) {
+        var beds = Store.getAll('beds');
         if (beds.length === 0) {
-            container.innerHTML = '<div class="timeline-placeholder">请先添加美容床</div>';
-            return;
+            return '<div class="timeline-placeholder">请先添加美容床</div>';
         }
 
         var customers = Store.getAll('customers');
         var beauticians = Store.getAll('beauticians');
+        var releasedSlots = Store.getAll('releasedSlots').filter(function (s) {
+            return s.date === date;
+        });
 
         var html = '<div class="tl-table">';
 
@@ -257,11 +337,22 @@ var Scheduler = (function () {
             html += '<div class="tl-bed-label">' + bed.name + '</div>';
             html += '<div class="tl-slots-container">';
 
+            releasedSlots.filter(function (s) { return s.bedId === bed.id; }).forEach(function (slot) {
+                var leftPct = ((slot.startTime - 9) / 12) * 100;
+                var widthPct = ((slot.endTime - slot.startTime) / 12) * 100;
+                var isRecent = (new Date() - new Date(slot.releasedAt)) < 10000;
+                var highlightClass = isRecent ? 'slot-highlight' : '';
+                html += '<div class="tl-free-slot ' + highlightClass + '" style="left:' + leftPct + '%;width:' + widthPct + '%">' +
+                    '<span class="free-label">可预约</span>' +
+                    '</div>';
+            });
+
             appts.forEach(function (appt) {
                 var customer = customers.find(function (c) { return c.id === appt.customerId; });
                 var leftPct = ((appt.startTime - 9) / 12) * 100;
                 var widthPct = ((appt.endTime - appt.startTime) / 12) * 100;
-                html += '<div class="tl-appt-bar" style="left:' + leftPct + '%;width:' + widthPct + '%" ' +
+                var filterClass = matchFilter(appt) ? 'filtered-in' : 'filtered-out';
+                html += '<div class="tl-appt-bar ' + filterClass + '" style="left:' + leftPct + '%;width:' + widthPct + '%" ' +
                     'data-action="view-appointment" data-id="' + appt.id + '" ' +
                     'title="' + (customer ? customer.name : '') + ' ' + appt.serviceName + '">' +
                     '<span class="bar-name">' + (customer ? customer.name : '') + '</span>' +
@@ -274,7 +365,116 @@ var Scheduler = (function () {
         });
 
         html += '</div>';
-        container.innerHTML = html;
+        return html;
+    }
+
+    function renderWeekView(date) {
+        var beds = Store.getAll('beds');
+        if (beds.length === 0) {
+            return '<div class="timeline-placeholder">请先添加美容床</div>';
+        }
+
+        var customers = Store.getAll('customers');
+        var beauticians = Store.getAll('beauticians');
+        var baseDate = new Date(date + 'T00:00:00');
+        var dayOfWeek = baseDate.getDay() || 7;
+        var mondayOffset = dayOfWeek - 1;
+        baseDate.setDate(baseDate.getDate() - mondayOffset);
+
+        var weekDates = [];
+        for (var i = 0; i < 7; i++) {
+            var d = new Date(baseDate);
+            d.setDate(d.getDate() + i);
+            var dateStr = d.toISOString().split('T')[0];
+            weekDates.push({
+                date: dateStr,
+                label: (d.getMonth() + 1) + '/' + d.getDate(),
+                weekday: ['周一', '周二', '周三', '周四', '周五', '周六', '周日'][i]
+            });
+        }
+
+        var html = '<div class="week-view">';
+        html += '<div class="week-header">';
+        html += '<div class="week-corner"></div>';
+        weekDates.forEach(function (wd) {
+            html += '<div class="week-day-header">' +
+                '<div class="week-day-label">' + wd.weekday + '</div>' +
+                '<div class="week-date-label">' + wd.label + '</div>' +
+                '</div>';
+        });
+        html += '</div>';
+
+        beds.forEach(function (bed) {
+            html += '<div class="week-bed-row">';
+            html += '<div class="week-bed-label">' + bed.name + '</div>';
+            weekDates.forEach(function (wd) {
+                var appts = getBedSchedule(bed.id, wd.date);
+                var releasedSlots = Store.getAll('releasedSlots').filter(function (s) {
+                    return s.date === wd.date && s.bedId === bed.id;
+                });
+
+                html += '<div class="week-day-cell">';
+
+                releasedSlots.forEach(function (slot) {
+                    var topPct = ((slot.startTime - 9) / 12) * 100;
+                    var heightPct = ((slot.endTime - slot.startTime) / 12) * 100;
+                    var isRecent = (new Date() - new Date(slot.releasedAt)) < 10000;
+                    var highlightClass = isRecent ? 'slot-highlight' : '';
+                    html += '<div class="week-slot free ' + highlightClass + '" style="top:' + topPct + '%;height:' + heightPct + '%">' +
+                        '<span class="slot-time">' + formatTime(slot.startTime) + '</span>' +
+                        '<span class="slot-status">可预约</span>' +
+                        '</div>';
+                });
+
+                appts.forEach(function (appt) {
+                    var customer = customers.find(function (c) { return c.id === appt.customerId; });
+                    var topPct = ((appt.startTime - 9) / 12) * 100;
+                    var heightPct = ((appt.endTime - appt.startTime) / 12) * 100;
+                    var filterClass = matchFilter(appt) ? 'filtered-in' : 'filtered-out';
+                    html += '<div class="week-slot booked ' + filterClass + '" style="top:' + topPct + '%;height:' + heightPct + '%" ' +
+                        'data-action="view-appointment" data-id="' + appt.id + '" ' +
+                        'title="' + (customer ? customer.name : '') + ' ' + appt.serviceName + '">' +
+                        '<span class="slot-time">' + formatTime(appt.startTime) + '</span>' +
+                        '<span class="slot-customer">' + (customer ? customer.name : '') + '</span>' +
+                        '<span class="slot-service">' + appt.serviceName + '</span>' +
+                        '</div>';
+                });
+
+                html += '</div>';
+            });
+            html += '</div>';
+        });
+
+        html += '</div>';
+        return html;
+    }
+
+    function bindFilterEvents() {
+        var fb = document.getElementById('filter-beautician');
+        var fs = document.getElementById('filter-service');
+        var fbe = document.getElementById('filter-bed');
+
+        if (fb) fb.onchange = function () {
+            filters.beauticianId = this.value;
+            refresh();
+        };
+        if (fs) fs.onchange = function () {
+            filters.serviceType = this.value;
+            refresh();
+        };
+        if (fbe) fbe.onchange = function () {
+            filters.bedId = this.value;
+            refresh();
+        };
+    }
+
+    function bindViewToggleEvents() {
+        document.querySelectorAll('.view-toggle-btn').forEach(function (btn) {
+            btn.onclick = function () {
+                currentView = this.getAttribute('data-view');
+                refresh();
+            };
+        });
     }
 
     function formatTime(hour) {
@@ -477,7 +677,7 @@ var Scheduler = (function () {
         }, 100);
     }
 
-    function showAppointmentForm() {
+    function showAppointmentForm(prefill) {
         var beds = Store.getAll('beds');
         var customers = Store.getAll('customers');
         var beauticians = Store.getAll('beauticians');
@@ -486,19 +686,23 @@ var Scheduler = (function () {
         if (customers.length === 0) { App.showToast('请先登记顾客', 'warning'); return; }
         if (beauticians.length === 0) { App.showToast('请先登记美容师', 'warning'); return; }
 
+        prefill = prefill || {};
         var dateInput = document.getElementById('scheduler-date');
-        var selectedDate = dateInput ? dateInput.value : new Date().toISOString().split('T')[0];
+        var selectedDate = prefill.date || (dateInput ? dateInput.value : new Date().toISOString().split('T')[0]);
 
         var bedOptions = beds.map(function (b) {
-            return '<option value="' + b.id + '">' + b.name + ' (' + (b.location || '默认') + ')</option>';
+            var sel = prefill.bedId === b.id ? 'selected' : '';
+            return '<option value="' + b.id + '" ' + sel + '>' + b.name + ' (' + (b.location || '默认') + ')</option>';
         }).join('');
 
         var customerOptions = customers.map(function (c) {
-            return '<option value="' + c.id + '">' + c.name + ' (' + c.phone + ')</option>';
+            var sel = prefill.customerId === c.id ? 'selected' : '';
+            return '<option value="' + c.id + '" ' + sel + '>' + c.name + ' (' + c.phone + ')</option>';
         }).join('');
 
         var beauticianOptions = beauticians.map(function (b) {
-            return '<option value="' + b.id + '">' + b.name + '</option>';
+            var sel = prefill.beauticianId === b.id ? 'selected' : '';
+            return '<option value="' + b.id + '" ' + sel + '>' + b.name + '</option>';
         }).join('');
 
         var serviceOptions = SERVICE_TYPES.map(function (s) {

@@ -8,6 +8,8 @@ var App = (function () {
         setupGlobalClickHandlers();
         setupDataActions();
         setupDesktopIntegration();
+        setupBackupButtons();
+        setupAutoBackup();
         switchModule('scheduler');
     }
 
@@ -37,7 +39,8 @@ var App = (function () {
             scheduler: '护理排期',
             conflict: '冲突校验',
             matching: '双向撮合',
-            affinity: '契合排序'
+            affinity: '契合排序',
+            backup: '数据管理'
         };
         var titleEl = document.getElementById('module-title');
         if (titleEl) titleEl.textContent = titles[moduleName] || '';
@@ -59,6 +62,9 @@ var App = (function () {
                 break;
             case 'affinity':
                 Affinity.refresh();
+                break;
+            case 'backup':
+                refreshBackupPanel();
                 break;
         }
     }
@@ -178,9 +184,9 @@ var App = (function () {
         var now = new Date();
         var dateStr = now.getFullYear() +
             ('0' + (now.getMonth() + 1)).slice(-2) +
-            ('0' + now.getDate()).slice(-2) +
-            ('0' + now.getHours()).slice(-2) +
-            ('0' + now.getMinutes()).slice(-2);
+            ('0' + (now.getDate())).slice(-2) +
+            ('0' + (now.getHours())).slice(-2) +
+            ('0' + (now.getMinutes())).slice(-2);
         a.download = '美容院数据备份_' + dateStr + '.json';
         document.body.appendChild(a);
         a.click();
@@ -201,22 +207,31 @@ var App = (function () {
         reader.onload = function (e) {
             try {
                 var jsonStr = e.target.result;
-                var success = Store.importData(jsonStr);
-                if (success) {
+                var result = Store.importData(jsonStr);
+                if (result && result.success) {
                     Scheduler.refresh();
                     Conflict.refresh(new Date().toISOString().split('T')[0]);
                     Matching.refresh();
                     Affinity.refresh();
-                    showToast('数据导入成功！', 'success');
+                    var msg = '数据导入成功！';
+                    if (result.exportedAt) {
+                        msg += '（备份时间：' + new Date(result.exportedAt).toLocaleString('zh-CN') + '）';
+                    }
+                    showToast(msg, 'success');
                 } else {
-                    showToast('导入失败：文件格式不正确', 'error');
+                    var errorMsg = result && result.message ? result.message : '导入失败：文件格式不正确';
+                    if (result && result.errors && result.errors.length > 0) {
+                        errorMsg += '\n\n问题详情：\n• ' + result.errors.slice(0, 5).join('\n• ');
+                        if (result.errors.length > 5) errorMsg += '\n... 共 ' + result.errors.length + ' 处问题';
+                    }
+                    alert(errorMsg);
                 }
             } catch (err) {
-                showToast('导入失败：' + err.message, 'error');
+                alert('导入失败：' + err.message);
             }
         };
         reader.onerror = function () {
-            showToast('读取文件失败', 'error');
+            alert('读取文件失败，请检查文件是否可读');
         };
         reader.readAsText(file);
     }
@@ -224,19 +239,41 @@ var App = (function () {
     function setupDesktopIntegration() {
         if (!window.desktopAPI) return;
 
-        window.desktopAPI.onExportData(function (filePath) {
+        window.desktopAPI.onExportData(async function (filePath) {
             try {
                 var dataStr = Store.exportData();
                 if (filePath) {
-                    window.desktopAPI.saveFile(dataStr, filePath);
-                    window.desktopAPI.sendExportComplete(true);
-                    showToast('数据已导出到: ' + filePath, 'success');
+                    var saveSuccess = await window.desktopAPI.saveFile(dataStr, filePath);
+                    var verifySuccess = false;
+                    if (saveSuccess) {
+                        try {
+                            var savedContent = await window.desktopAPI.readFile(filePath);
+                            var parsed = JSON.parse(savedContent);
+                            verifySuccess = parsed.magic === Store.MAGIC && parsed.version === 1 && !!parsed.data;
+                        } catch (e) {
+                            verifySuccess = false;
+                        }
+                    }
+
+                    if (saveSuccess && verifySuccess) {
+                        window.desktopAPI.sendExportComplete(true);
+                        showToast('数据已导出到: ' + filePath, 'success');
+                    } else {
+                        window.desktopAPI.sendExportComplete(false);
+                        var retry = confirm('导出失败：文件未正确保存。\n\n失败原因：' + (saveSuccess ? '文件校验不通过' : '写入文件失败') + '\n\n是否选择其他位置重新保存？');
+                        if (retry) {
+                            setTimeout(function () {
+                                var saveBtn = document.getElementById('btn-export-data');
+                                if (saveBtn) saveBtn.click();
+                            }, 200);
+                        }
+                    }
                 } else {
                     window.desktopAPI.sendExportComplete(false);
                 }
             } catch (e) {
                 window.desktopAPI.sendExportComplete(false);
-                showToast('导出失败: ' + e.message, 'error');
+                alert('导出失败: ' + e.message + '\n\n是否选择其他位置重新保存？');
             }
         });
 
@@ -245,12 +282,12 @@ var App = (function () {
             window.desktopAPI.readFile(filePath).then(function (content) {
                 if (!content) {
                     window.desktopAPI.sendImportComplete(false);
-                    showToast('导入失败：无法读取文件', 'error');
+                    alert('导入失败：无法读取文件，请检查文件是否存在且可读');
                     return;
                 }
                 try {
-                    var success = Store.importData(content);
-                    if (success) {
+                    var result = Store.importData(content);
+                    if (result && result.success) {
                         Scheduler.refresh();
                         Conflict.refresh(new Date().toISOString().split('T')[0]);
                         Matching.refresh();
@@ -259,23 +296,144 @@ var App = (function () {
                         showToast('数据导入成功！', 'success');
                     } else {
                         window.desktopAPI.sendImportComplete(false);
-                        showToast('导入失败：文件格式不正确', 'error');
+                        var errorMsg = result && result.message ? result.message : '导入失败';
+                        if (result && result.errors && result.errors.length > 0) {
+                            errorMsg += '\n\n问题详情：\n• ' + result.errors.slice(0, 5).join('\n• ');
+                            if (result.errors.length > 5) errorMsg += '\n... 共 ' + result.errors.length + ' 处问题';
+                        }
+                        alert(errorMsg);
                     }
                 } catch (e) {
                     window.desktopAPI.sendImportComplete(false);
-                    showToast('导入失败: ' + e.message, 'error');
+                    alert('导入失败: ' + e.message);
                 }
             });
         });
 
         window.desktopAPI.onClearData(function () {
-            Store.clearAll();
-            Scheduler.refresh();
-            Conflict.refresh(new Date().toISOString().split('T')[0]);
-            Matching.refresh();
-            Affinity.refresh();
-            showToast('本地数据已全部清除', 'success');
+            if (confirm('确定要清除所有本地数据吗？此操作不可恢复！\n\n建议先导出备份。')) {
+                Store.clearAll();
+                Scheduler.refresh();
+                Conflict.refresh(new Date().toISOString().split('T')[0]);
+                Matching.refresh();
+                Affinity.refresh();
+                showToast('本地数据已全部清除', 'success');
+            }
         });
+    }
+
+    function setupAutoBackup() {
+        var check = Store.checkShouldAutoBackup();
+        if (check.shouldBackup) {
+            setTimeout(function () {
+                var backup = Store.createAutoBackup('daily');
+                if (backup) {
+                    showToast('已自动创建今日备份', 'info');
+                }
+            }, 2000);
+        }
+
+        if (window.desktopAPI) {
+            window.addEventListener('beforeunload', function () {
+                Store.createAutoBackup('shutdown');
+            });
+        }
+    }
+
+    function setupBackupButtons() {
+        var btnManualBackup = document.getElementById('btn-manual-backup');
+        if (btnManualBackup) {
+            btnManualBackup.addEventListener('click', function () {
+                var backup = Store.createAutoBackup('manual');
+                if (backup) {
+                    showToast('手动备份创建成功', 'success');
+                    refreshBackupPanel();
+                } else {
+                    showToast('备份失败', 'error');
+                }
+            });
+        }
+
+        var btnRefreshBackups = document.getElementById('btn-refresh-backups');
+        if (btnRefreshBackups) {
+            btnRefreshBackups.addEventListener('click', function () {
+                refreshBackupPanel();
+                showToast('已刷新备份列表', 'info');
+            });
+        }
+
+        var btnBackupExport = document.getElementById('btn-backup-export');
+        if (btnBackupExport) {
+            btnBackupExport.addEventListener('click', function () {
+                exportData();
+            });
+        }
+
+        var btnBackupImport = document.getElementById('btn-backup-import');
+        var backupFileInput = document.getElementById('backup-file-input');
+        if (btnBackupImport && backupFileInput) {
+            btnBackupImport.addEventListener('click', function () {
+                backupFileInput.click();
+            });
+            backupFileInput.addEventListener('change', function (e) {
+                if (e.target.files && e.target.files.length > 0) {
+                    importData(e.target.files[0]);
+                    backupFileInput.value = '';
+                }
+            });
+        }
+    }
+
+    function formatFileSize(bytes) {
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+        return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+    }
+
+    function refreshBackupPanel() {
+        var backups = Store.getAutoBackups();
+        var stats = Store.getBackupStats();
+
+        var statsEl = document.getElementById('backup-stats');
+        if (statsEl) {
+            statsEl.innerHTML = '<strong>📊 ' + stats.count + '</strong>/' + stats.maxCount + ' 份 · 共 ' +
+                formatFileSize(stats.totalSize);
+        }
+
+        var container = document.getElementById('backup-list');
+        if (!container) return;
+
+        if (backups.length === 0) {
+            container.innerHTML = '<div class="empty-hint">暂无自动备份记录<br><span style="font-size:12px">首次打开和关闭软件时会自动创建</span></div>';
+            return;
+        }
+
+        var reasonLabels = {
+            daily: '每日自动',
+            shutdown: '关闭时',
+            manual: '手动创建'
+        };
+
+        container.innerHTML = backups.map(function (b, idx) {
+            var time = new Date(b.timestamp);
+            var reason = reasonLabels[b.reason] || b.reason;
+            var reasonClass = b.reason === 'daily' ? 'reason-daily' :
+                              b.reason === 'shutdown' ? 'reason-shutdown' : 'reason-manual';
+
+            return '<div class="backup-item" data-id="' + b.id + '">' +
+                '<div class="backup-main">' +
+                '<div class="backup-header">' +
+                '<span class="backup-badge ' + reasonClass + '">' + reason + '</span>' +
+                '<span class="backup-time">' + time.toLocaleString('zh-CN') + '</span>' +
+                '<span class="backup-size">' + formatFileSize(b.size) + '</span>' +
+                '</div>' +
+                '</div>' +
+                '<div class="backup-actions">' +
+                '<button class="btn btn-sm btn-primary" data-action="restore-backup" data-id="' + b.id + '">一键恢复</button>' +
+                '<button class="btn-icon btn-delete" data-action="delete-backup" data-id="' + b.id + '" title="删除此备份">🗑️</button>' +
+                '</div>' +
+                '</div>';
+        }).join('');
     }
 
     function setupGlobalClickHandlers() {
@@ -287,6 +445,31 @@ var App = (function () {
             var id = target.getAttribute('data-id');
 
             switch (action) {
+                case 'restore-backup':
+                    if (!confirm('确定要恢复到此备份吗？\n\n此操作将覆盖当前所有数据，建议先导出当前数据备份。')) {
+                        return;
+                    }
+                    var restoreResult = Store.restoreAutoBackup(id);
+                    if (restoreResult && restoreResult.success) {
+                        Scheduler.refresh();
+                        Conflict.refresh(new Date().toISOString().split('T')[0]);
+                        Matching.refresh();
+                        Affinity.refresh();
+                        refreshBackupPanel();
+                        showToast('恢复成功！', 'success');
+                    } else {
+                        alert('恢复失败：' + (restoreResult && restoreResult.message ? restoreResult.message : '未知错误'));
+                    }
+                    break;
+
+                case 'delete-backup':
+                    if (confirm('确定删除此备份吗？')) {
+                        Store.deleteAutoBackup(id);
+                        refreshBackupPanel();
+                        showToast('备份已删除', 'info');
+                    }
+                    break;
+
                 case 'edit-bed':
                     var bed = Store.getById('beds', id);
                     if (bed) Scheduler.showBedForm(bed);
@@ -334,6 +517,30 @@ var App = (function () {
                 case 'edit-skin-profile':
                     var profile = Store.getById('skinProfiles', id);
                     if (profile) Affinity.showSkinProfileForm(profile);
+                    break;
+
+                case 'create-appointment-from-match':
+                    var customerId = target.getAttribute('data-customer');
+                    var beauticianId = target.getAttribute('data-beautician');
+                    switchModule('scheduler');
+                    setTimeout(function () {
+                        Scheduler.showAppointmentForm({
+                            customerId: customerId,
+                            beauticianId: beauticianId
+                        });
+                    }, 100);
+                    break;
+
+                case 'create-appointment-from-ranking':
+                    var customerId2 = target.getAttribute('data-customer');
+                    var beauticianId2 = target.getAttribute('data-beautician');
+                    switchModule('scheduler');
+                    setTimeout(function () {
+                        Scheduler.showAppointmentForm({
+                            customerId: customerId2,
+                            beauticianId: beauticianId2
+                        });
+                    }, 100);
                     break;
             }
         });
@@ -432,6 +639,9 @@ var App = (function () {
         hideModal: hideModal,
         showToast: showToast,
         switchModule: switchModule,
-        refreshModule: refreshModule
+        refreshModule: refreshModule,
+        refreshBackupPanel: refreshBackupPanel,
+        exportData: exportData,
+        importData: importData
     };
 })();

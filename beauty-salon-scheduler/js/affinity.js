@@ -237,9 +237,30 @@ var Affinity = (function () {
         return html;
     }
 
+    function populateCustomerFilter() {
+        var filterSelect = document.getElementById('affinity-customer-filter');
+        if (!filterSelect) return;
+
+        var customers = Store.getAll('customers');
+        var currentValue = filterSelect.value;
+
+        var options = '<option value="">全部顾客</option>' +
+            customers.map(function (c) {
+                return '<option value="' + c.id + '">' + c.name + '</option>';
+            }).join('');
+
+        filterSelect.innerHTML = options;
+        if (currentValue) filterSelect.value = currentValue;
+    }
+
     function renderAffinityRanking() {
+        populateCustomerFilter();
+
         var container = document.getElementById('affinity-ranking');
         if (!container) return;
+
+        var filterSelect = document.getElementById('affinity-customer-filter');
+        var filterCustomerId = filterSelect ? filterSelect.value : '';
 
         var scores = Store.getAll('affinityScores');
         var customers = Store.getAll('customers');
@@ -250,7 +271,16 @@ var Affinity = (function () {
             return;
         }
 
+        if (filterCustomerId) {
+            scores = scores.filter(function (s) { return s.customerId === filterCustomerId; });
+        }
+
         scores.sort(function (a, b) { return b.totalScore - a.totalScore; });
+
+        if (scores.length === 0) {
+            container.innerHTML = '<div class="empty-hint">该顾客暂无契合度排行数据</div>';
+            return;
+        }
 
         container.innerHTML = scores.map(function (s, idx) {
             var customer = customers.find(function (c) { return c.id === s.customerId; });
@@ -281,6 +311,9 @@ var Affinity = (function () {
                 breakdownHtml +
                 '</div>' +
                 '<div class="rank-score ' + scoreClass + '">' + s.totalScore + '</div>' +
+                '<div class="rank-actions">' +
+                '<button class="btn btn-sm btn-primary" data-action="create-appointment-from-ranking" data-customer="' + s.customerId + '" data-beautician="' + s.beauticianId + '" title="去预约">📅 预约</button>' +
+                '</div>' +
                 '</div>';
         }).join('');
     }
@@ -390,9 +423,20 @@ var Affinity = (function () {
         }, 100);
     }
 
+    function bindFilterEvents() {
+        var filterSelect = document.getElementById('affinity-customer-filter');
+        if (filterSelect && !filterSelect._bound) {
+            filterSelect._bound = true;
+            filterSelect.addEventListener('change', function () {
+                renderAffinityRanking();
+            });
+        }
+    }
+
     function refresh() {
         renderSkinProfiles();
         renderAffinityRanking();
+        bindFilterEvents();
     }
 
     return {

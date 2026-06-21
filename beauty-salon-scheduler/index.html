@@ -31,6 +31,10 @@
                     <span class="nav-icon">⭐</span>
                     <span class="nav-label">契合排序</span>
                 </a>
+                <a href="#" class="nav-item" data-module="backup">
+                    <span class="nav-icon">🗂️</span>
+                    <span class="nav-label">数据管理</span>
+                </a>
             </nav>
             <div class="sidebar-footer">
                 <div class="stat-card">
@@ -156,6 +160,11 @@
                             <button class="btn btn-primary" id="btn-add-skin-profile">🧴 建立肤质档案</button>
                             <button class="btn btn-secondary" id="btn-calc-affinity">📊 计算契合度</button>
                         </div>
+                        <div class="toolbar-right">
+                            <select id="affinity-customer-filter" class="form-input" style="width:180px">
+                                <option value="">全部顾客</option>
+                            </select>
+                        </div>
                     </div>
                     <div class="affinity-grid">
                         <div class="affinity-column">
@@ -168,6 +177,64 @@
                             <div class="info-card highlight-card">
                                 <h3>🏆 契合度排行</h3>
                                 <div id="affinity-ranking" class="ranking-list"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="module-panel" id="panel-backup">
+                    <div class="panel-toolbar">
+                        <div class="toolbar-left">
+                            <button class="btn btn-primary" id="btn-manual-backup">📷 立即备份</button>
+                            <button class="btn btn-secondary" id="btn-refresh-backups">🔄 刷新列表</button>
+                        </div>
+                        <div class="toolbar-right">
+                            <span class="backup-stats" id="backup-stats"></span>
+                        </div>
+                    </div>
+                    <div class="backup-grid">
+                        <div class="backup-main">
+                            <div class="info-card highlight-card">
+                                <h3>📂 自动备份记录（最多保留 10 份）</h3>
+                                <div id="backup-list" class="backup-list"></div>
+                            </div>
+                        </div>
+                        <div class="backup-sidebar">
+                            <div class="info-card">
+                                <h3>💡 备份说明</h3>
+                                <div class="backup-hints">
+                                    <p><strong>自动备份</strong></p>
+                                    <ul>
+                                        <li>每天首次打开自动创建</li>
+                                        <li>关闭软件时自动创建</li>
+                                        <li>最多保留最近 10 份</li>
+                                    </ul>
+                                    <p><strong>手动备份</strong></p>
+                                    <ul>
+                                        <li>点击「立即备份」随时创建</li>
+                                        <li>建议定期导出到外部文件</li>
+                                    </ul>
+                                    <p><strong>恢复注意</strong></p>
+                                    <ul>
+                                        <li>恢复会覆盖当前数据</li>
+                                        <li>建议恢复前先导出当前数据</li>
+                                    </ul>
+                                </div>
+                            </div>
+                            <div class="info-card">
+                                <h3>📤 导出到外部文件</h3>
+                                <p style="font-size:12px;color:var(--text-light);margin-bottom:10px">
+                                    将数据保存为 JSON 文件，用于换电脑或长期备份
+                                </p>
+                                <button class="btn btn-outline" style="width:100%" id="btn-backup-export">💾 导出备份文件</button>
+                            </div>
+                            <div class="info-card">
+                                <h3>📥 从外部文件恢复</h3>
+                                <p style="font-size:12px;color:var(--text-light);margin-bottom:10px">
+                                    从之前导出的 JSON 文件恢复数据
+                                </p>
+                                <button class="btn btn-outline" style="width:100%" id="btn-backup-import">📂 导入备份文件</button>
+                                <input type="file" id="backup-file-input" accept=".json" style="display:none">
                             </div>
                         </div>
                     </div>
